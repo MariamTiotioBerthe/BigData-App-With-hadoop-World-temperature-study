@@ -1,0 +1,158 @@
+<workflow-app xmlns="uri:oozie:workflow:0.4" name="processor">
+
+	<start to="generateScan" />
+	
+    <action name="generateScan">
+        <java>
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <main-class>processor.GenerateScanString</main-class>
+            <arg>${wf:conf('station')}</arg>
+            <arg>${measure}</arg>
+            <capture-output />
+        </java>
+        <ok to="mr" />
+        <error to="error" />
+    </action>
+	
+	<action name="mr">
+		<map-reduce>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<prepare>
+				<delete path="${processDir}" />
+			</prepare>
+			
+				<configuration>
+
+				<property>
+					<name>mapred.mapper.new-api</name>
+					<value>true</value>
+				</property>
+				<property>
+					<name>mapred.reducer.new-api</name>
+					<value>true</value>
+				</property>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>default</value>
+				</property>
+				<property>
+					<name>mapreduce.job.name</name>
+					<value>processor</value>
+				</property>
+
+				<property>
+					<name>mapreduce.job.map.class</name>
+					<value>processor.GhcnMapper</value>
+				</property>
+				<property>
+					<name>mapreduce.job.inputformat.class</name>
+					<value>org.apache.hadoop.hbase.mapreduce.TableInputFormat</value>
+				</property>
+				<property>
+					<name>mapreduce.map.output.key.class</name>
+					<value>processor.TwoDimensionsWritable</value>
+				</property>
+				<property>
+					<name>mapreduce.map.output.value.class</name>
+					<value>org.apache.hadoop.io.IntWritable</value>
+				</property>
+				<property>
+					<name>hbase.mapreduce.inputtable</name>
+					<value>ghcn</value>
+				</property>
+
+				<property>
+					<name>mapreduce.job.reduce.class</name>
+					<value>processor.AggregatorReducer</value>
+				</property>
+				<property>
+					<name>mapreduce.job.outputformat.class</name>
+					<value>org.apache.hadoop.mapreduce.lib.output.TextOutputFormat
+					</value>
+				</property>
+				<property>
+					<name>mapreduce.output.fileoutputformat.outputdir</name>
+					<value>${processDir}</value>
+				</property>
+				
+				<property>
+					<name>hbase.mapreduce.scan</name>
+					<value>${wf:actionData('generateScan')['scan']}</value>
+				</property>
+
+				<property>
+					<name>mapreduce.job.reduces</name>
+					<value>10</value>
+				</property>
+
+				<property>
+					<name>mapreduce.job.combine.class</name>
+					<value>processor.MyCombiner</value>
+				</property>
+
+				<property>
+					<name>mapreduce.job.partitioner.class</name>
+					<value>processor.MyPartitioner</value>
+				</property>
+				<property>
+					<name>mapreduce.job.output.group.comparator.class</name>
+					<value>processor.TwoDimensionsGroupingComparator</value>
+				</property>
+				<property>
+					<name>mapreduce.job.output.key.comparator.class</name>
+					<value>processor.TwoDimensionsSortComparator</value>
+				</property>
+				
+				<property>
+					<name>workflowId</name>
+					<value>${wf:id()}</value>
+				</property>
+				
+				<property>
+					<name>dim1</name>
+					<value>${dim1}</value>
+				</property>
+				<property>
+					<name>dim2</name>
+					<value>${dim2}</value>
+				</property>
+				<property>
+					<name>operator</name>
+					<value>${operator}</value>
+				</property>
+				
+			</configuration>
+		</map-reduce>
+		<ok to="export" />
+		<error to="error" />	
+	</action>
+
+	<action name="export">
+		<sqoop xmlns="uri:oozie:sqoop-action:0.2">
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<arg>export</arg>
+			<arg>--connect</arg>
+			<arg>jdbc:mysql://localhost/monapp</arg>
+			<arg>--username</arg>
+			<arg>root</arg>
+			<arg>--password</arg>
+			<arg>cloudera</arg>
+			<arg>--export-dir</arg>
+			<arg>${processDir}</arg>
+			<arg>--table</arg>
+			<arg>results</arg>
+		</sqoop>	
+		<ok to="end" />
+		<error to="error" />
+	</action>
+
+	<kill name="error">
+		<message>Job failed</message>
+	</kill>
+
+	<end name="end" />
+
+</workflow-app>
